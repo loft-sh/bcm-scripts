@@ -1,98 +1,128 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# -------------------------------------------------------------------
 usage() {
-  echo "Usage: $0 <domain> [--namespace NAMESPACE]"
+  cat <<EOF
+Usage:
+  $0 ca
+      # Generate a new CA in ./ca/ca.key and ./ca/ca.pem
+
+  $0 tls <domain> [--namespace NAMESPACE] [--secret-name SECRET_NAME]
+      # Generate a TLS cert for <domain> using the CA in ./ca/,
+      # and emit two Kubernetes Secret YAMLs.
+
+Defaults for 'tls':
+  NAMESPACE="runai-backend"
+  SECRET_NAME="runai-cluster-domain-tls-secret"
+EOF
   exit 1
 }
 
-# defaults
-NAMESPACE="runai-backend"
+# Must have at least one argument
+[[ $# -ge 1 ]] || usage
 
-# must have at least a domain
-if [ $# -lt 1 ]; then
-  usage
-fi
+CMD="$1"; shift
 
-# parse args
-DOMAIN=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --namespace)
-      if [ -n "${2-}" ] && [[ ! "$2" =~ ^- ]]; then
-        NAMESPACE="$2"
-        shift 2
-      else
-        echo "Error: --namespace requires a value"
-        usage
-      fi
-      ;;
-    -*)
-      echo "Unknown option: $1"
-      usage
-      ;;
-    *)
-      if [ -z "$DOMAIN" ]; then
-        DOMAIN="$1"
-        shift
-      else
-        echo "Unexpected argument: $1"
-        usage
-      fi
-      ;;
-  esac
-done
+case "$CMD" in
+  ca)
+    # no extra args
+    [[ $# -eq 0 ]] || usage
 
-if [ -z "$DOMAIN" ]; then
-  usage
-fi
+    CA_DIR="ca"
+    mkdir -p "${CA_DIR}"
+    echo "Generating CA in ${CA_DIR}/…"
 
-CERT_DIR="_certs"
+    # 1) Generate CA private key
+    openssl genrsa -out "${CA_DIR}/ca.key" 4096
 
-# Prepare directory
-mkdir -p "${CERT_DIR}"
-cd "${CERT_DIR}"
+    # 2) Self-sign to create CA PEM
+    openssl req -x509 -new -nodes \
+      -key "${CA_DIR}/ca.key" \
+      -sha256 \
+      -days 3650 \
+      -subj "/CN=My Root CA" \
+      -out "${CA_DIR}/ca.pem" \
+      > /dev/null 2>&1
 
-# 1) Create a CA
-openssl genrsa -out ca.key 4096
-openssl req -x509 -new -nodes \
-  -key ca.key \
-  -sha256 \
-  -days 3650 \
-  -subj "/CN=${DOMAIN} CA" \
-  -out ca.pem > /dev/null 2>&1
+    echo "Done: ${CA_DIR}/ca.key, ${CA_DIR}/ca.pem"
+    ;;
 
-# 2) Create a server key & CSR for ${DOMAIN}
-openssl genrsa -out server.key 2048
-openssl req -new \
-  -key server.key \
-  -subj "/CN=${DOMAIN}" \
-  -out server.csr > /dev/null 2>&1
+  tls)
+    # defaults
+    NAMESPACE="runai-backend"
+    SECRET_NAME="runai-cluster-domain-tls-secret"
+    DOMAIN=""
 
-# 3) Sign the CSR with your CA
-openssl x509 -req \
-  -in server.csr \
-  -CA ca.pem \
-  -CAkey ca.key \
-  -CAcreateserial \
-  -out server.crt \
-  -days 825 \
-  -sha256 > /dev/null 2>&1
+    # parse flags + domain
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --namespace)
+          [[ -n "${2-}" && "${2:0:1}" != "-" ]] \
+            || { echo "Error: --namespace requires a value"; usage; }
+          NAMESPACE="$2"
+          shift 2
+          ;;
+        --secret-name)
+          [[ -n "${2-}" && "${2:0:1}" != "-" ]] \
+            || { echo "Error: --secret-name requires a value"; usage; }
+          SECRET_NAME="$2"
+          shift 2
+          ;;
+        -*)
+          echo "Unknown option: $1"
+          usage
+          ;;
+        *)
+          [[ -z "$DOMAIN" ]] \
+            && { DOMAIN="$1"; shift; } \
+            || { echo "Unexpected argument: $1"; usage; }
+          ;;
+      esac
+    done
 
-# 4) Bundle server + CA into fullchain.pem
-cat server.crt ca.pem > fullchain.pem
+    [[ -n "$DOMAIN" ]] || usage
 
-# 5) Base64-encode for Kubernetes secrets (no newlines)
-CRT_B64=$(cat fullchain.pem | base64 -w0)
-KEY_B64=$(cat server.key | base64 -w0)
-CA_B64=$(cat ca.pem | base64 -w0)
+    # intermediate cert dir
+    CERT_DIR="_certs"
+    mkdir -p "${CERT_DIR}"
+    cd "${CERT_DIR}"
 
-# 6) Emit the two Secret manifests
-cat <<EOF
+    echo "Generating TLS cert for ${DOMAIN}…"
+
+    # 1) Server key & CSR
+    openssl genrsa -out server.key 2048
+    openssl req -new \
+      -key server.key \
+      -subj "/CN=${DOMAIN}" \
+      -out server.csr \
+      > /dev/null 2>&1
+
+    # 2) Sign with existing CA
+    openssl x509 -req \
+      -in server.csr \
+      -CA ../ca/ca.pem \
+      -CAkey ../ca/ca.key \
+      -CAcreateserial \
+      -out server.crt \
+      -days 825 \
+      -sha256 \
+      > /dev/null 2>&1
+
+    # 3) Full chain
+    cat server.crt ../ca/ca.pem > fullchain.pem
+
+    # 4) Base64-encode (no newlines)
+    CRT_B64=$(base64 -w0 < fullchain.pem)
+    KEY_B64=$(base64 -w0 < server.key)
+    CA_B64=$(base64 -w0 < ../ca/ca.pem)
+
+    # 5) Emit Secrets
+    cat <<EOF
 apiVersion: v1
 kind: Secret
 metadata:
-  name: runai-cluster-domain-tls-secret
+  name: ${SECRET_NAME}
   namespace: ${NAMESPACE}
 type: kubernetes.io/tls
 data:
@@ -112,6 +142,12 @@ data:
   runai-ca.pem: ${CA_B64}
 EOF
 
-# 7) Cleanup 
-cd ..
-rm -rf "${CERT_DIR}"
+    # cleanup
+    cd ..
+    rm -rf "${CERT_DIR}"
+    ;;
+
+  *)
+    usage
+    ;;
+esac
