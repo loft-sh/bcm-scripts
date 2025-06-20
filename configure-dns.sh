@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# configure-dns.sh – add or remove BIND zones (supports wildcards)
+# configure-dns.sh – add or remove BIND zones (supports wildcard records)
 # Usage:
 #   ./configure-dns.sh add    <domain> <ip>
 #   ./configure-dns.sh remove <domain>
@@ -14,8 +14,8 @@ RNDC="rndc"
 function usage() {
     cat <<EOF
 Usage:
-  $0 add    <domain> <ip>     # add or overwrite a zone
-  $0 remove <domain>          # remove a zone
+  $0 add    <domain> <ip>     # add or overwrite a zone (domain or *.domain)
+  $0 remove <domain>          # remove a zone (domain or "*.domain")
 Examples:
   $0 add loft.bcm.com     192.168.0.1
   $0 add *.example.com    10.10.10.10
@@ -36,17 +36,24 @@ if [[ $# -lt 2 ]]; then
 fi
 
 ACTION=$1
-DOMAIN=$2
+RAW_DOMAIN=$2
+
+# Determine if wildcard record is requested
+if [[ "$RAW_DOMAIN" == \*.* ]]; then
+    WILDCARD=true
+    DOMAIN=${RAW_DOMAIN#"*."}   # strip "*."
+else
+    WILDCARD=false
+    DOMAIN=$RAW_DOMAIN
+fi
 
 # sanitize zone file name: replace '*' with '_wildcard'
-ZONE_FILE_NAME="${DOMAIN//\*/_wildcard}.zone"
+ZONE_FILE_NAME="${RAW_DOMAIN//\*/_wildcard}.zone"
 ZONE_FILE_PATH="${ZONE_DIR}/${ZONE_FILE_NAME}"
 
-# remove existing zone stanza from named.conf.include
 function remove_zone_stanza() {
     if grep -qE "^\s*zone\s+\"${DOMAIN}\"" "${CONFIG}"; then
-        # delete from 'zone "<domain>" {' through the next '};'
-        sed -i "/^\s*zone[[:space:]]\+\"${DOMAIN}\"/,/};/d" "${CONFIG}"
+        sed -i "/^\s*zone[[:space:]]+\"${DOMAIN}\"/,/};/d" "${CONFIG}"
         echo "Removed zone stanza for ${DOMAIN} from ${CONFIG}"
     else
         echo "No existing zone stanza for ${DOMAIN} in ${CONFIG}"
@@ -55,9 +62,7 @@ function remove_zone_stanza() {
 
 case "$ACTION" in
     add)
-        if [[ $# -ne 3 ]]; then
-            usage
-        fi
+        [[ $# -eq 3 ]] || usage
         IP=$3
 
         # remove any existing stanza (so we can overwrite)
@@ -77,27 +82,29 @@ EOF
         cat > "${ZONE_FILE_PATH}" <<EOF
 \$TTL    86400
 @       IN      SOA     localhost. root.localhost. (
-                            $(date +%y%m%d%H%M) ; serial
+                            $(date +%Y%m%d%H%M) ; serial (YYYYMMDDhhmm)
                             3600             ; refresh
                             1800             ; retry
                             604800           ; expire
-                            86400 )          ; minimum
-
+                            86400            ; minimum
+)
         IN      NS      localhost.
-        IN      A       ${IP}
 @       IN      A       ${IP}
 EOF
+        # add wildcard record if requested
+        if [[ "$WILDCARD" == true ]]; then
+            echo "*       IN      A       ${IP}" >> "${ZONE_FILE_PATH}"
+        fi
+
         echo "Created zone file ${ZONE_FILE_PATH} → ${IP}"
 
-        # reload BIND
-        ${RNDC} reload
-        echo "BIND reloaded."
+        # reload specific zone
+        ${RNDC} reload ${DOMAIN}
+        echo "Reloaded zone ${DOMAIN}."
         ;;
 
     remove)
-        if [[ $# -ne 2 ]]; then
-            usage
-        fi
+        [[ $# -eq 2 ]] || usage
 
         remove_zone_stanza
 
