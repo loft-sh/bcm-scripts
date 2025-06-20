@@ -76,14 +76,14 @@ EOF
         # generate minimal zone file
         cat > "${ZONE_FILE_PATH}" <<EOF
 \$TTL    86400
-@       IN      SOA     ${DOMAIN}. root.${DOMAIN}. (
-                            $(date +%Y%m%d%H%M) ; serial
+@       IN      SOA     localhost. root.localhost. (
+                            $(date +%y%m%d%H%M) ; serial
                             3600             ; refresh
                             1800             ; retry
                             604800           ; expire
                             86400 )          ; minimum
 
-        IN      NS      master.cm.cluster.
+        IN      NS      localhost.
         IN      A       ${IP}
 @       IN      A       ${IP}
 EOF
