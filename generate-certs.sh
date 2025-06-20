@@ -10,6 +10,7 @@ Usage:
 
   $0 tls <domain> [--namespace NAMESPACE] [--secret-name SECRET_NAME]
       # Generate a TLS cert for <domain> using the CA in ./ca/,
+      # include Subject Alternative Names instead of legacy CN,
       # and emit two Kubernetes Secret YAMLs.
 
 Defaults for 'tls':
@@ -26,7 +27,6 @@ CMD="$1"; shift
 
 case "$CMD" in
   ca)
-    # no extra args
     [[ $# -eq 0 ]] || usage
 
     CA_DIR="ca"
@@ -58,25 +58,16 @@ case "$CMD" in
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --namespace)
-          [[ -n "${2-}" && "${2:0:1}" != "-" ]] \
-            || { echo "Error: --namespace requires a value"; usage; }
-          NAMESPACE="$2"
-          shift 2
+          [[ -n "${2-}" && "${2:0:1}" != "-" ]] || { echo "Error: --namespace requires a value"; usage; }
+          NAMESPACE="$2"; shift 2
           ;;
         --secret-name)
-          [[ -n "${2-}" && "${2:0:1}" != "-" ]] \
-            || { echo "Error: --secret-name requires a value"; usage; }
-          SECRET_NAME="$2"
-          shift 2
+          [[ -n "${2-}" && "${2:0:1}" != "-" ]] || { echo "Error: --secret-name requires a value"; usage; }
+          SECRET_NAME="$2"; shift 2
           ;;
-        -*)
-          echo "Unknown option: $1"
-          usage
-          ;;
-        *)
-          [[ -z "$DOMAIN" ]] \
-            && { DOMAIN="$1"; shift; } \
-            || { echo "Unexpected argument: $1"; usage; }
+        -* ) echo "Unknown option: $1"; usage; ;;
+        * )
+          [[ -z "$DOMAIN" ]] && { DOMAIN="$1"; shift; } || { echo "Unexpected argument: $1"; usage; }
           ;;
       esac
     done
@@ -85,20 +76,49 @@ case "$CMD" in
 
     # intermediate cert dir
     CERT_DIR="_certs"
-    mkdir -p "${CERT_DIR}"
-    cd "${CERT_DIR}"
+    mkdir -p "${CERT_DIR}" && cd "${CERT_DIR}"
 
-    echo "Generating TLS cert for ${DOMAIN}…"
+    echo "Generating TLS cert for ${DOMAIN} with SANs…"
 
-    # 1) Server key & CSR
+    # 1) Generate server key
     openssl genrsa -out server.key 2048
+
+    # 2) Create CSR config for SANs
+    cat > san.cnf <<EOF
+[ req ]
+req_extensions = req_ext
+distinguished_name = dn
+prompt = no
+
+[ dn ]
+CN = ${DOMAIN}
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = ${DOMAIN}
+DNS.2 = www.${DOMAIN}
+EOF
+
+    # 3) Generate CSR with SANs
     openssl req -new \
       -key server.key \
-      -subj "/CN=${DOMAIN}" \
       -out server.csr \
+      -config san.cnf \
       > /dev/null 2>&1
 
-    # 2) Sign with existing CA
+    # 4) Create v3 extension file for signing
+    cat > v3.ext <<EOF
+[ v3_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = ${DOMAIN}
+DNS.2 = www.${DOMAIN}
+EOF
+
+    # 5) Sign the CSR with existing CA, including SANs
     openssl x509 -req \
       -in server.csr \
       -CA ../ca/ca.pem \
@@ -107,17 +127,19 @@ case "$CMD" in
       -out server.crt \
       -days 825 \
       -sha256 \
+      -extensions v3_ext \
+      -extfile v3.ext \
       > /dev/null 2>&1
 
-    # 3) Full chain
+    # 6) Full chain
     cat server.crt ../ca/ca.pem > fullchain.pem
 
-    # 4) Base64-encode (no newlines)
+    # 7) Base64-encode (no newlines)
     CRT_B64=$(base64 -w0 < fullchain.pem)
     KEY_B64=$(base64 -w0 < server.key)
     CA_B64=$(base64 -w0 < ../ca/ca.pem)
 
-    # 5) Emit Secrets
+    # 8) Emit Secrets
     cat <<EOF
 apiVersion: v1
 kind: Secret
@@ -143,8 +165,7 @@ data:
 EOF
 
     # cleanup
-    cd ..
-    rm -rf "${CERT_DIR}"
+    cd .. && rm -rf "${CERT_DIR}"
     ;;
 
   *)
