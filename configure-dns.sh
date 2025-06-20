@@ -55,7 +55,7 @@ ZONE_FILE_PATH="${ZONE_DIR}/${ZONE_FILE_NAME}"
 function remove_zone_stanza() {
     if grep -qE "^\s*zone\s+\"${ZONE_NAME}\"" "${CONFIG}"; then
         # delete from 'zone "${ZONE_NAME}" {' through the next '};'
-        sed -i "/^\s*zone[[:space:]]+\"${ZONE_NAME}\"/,/};/d" "${CONFIG}"
+        sed -r -i "/^[[:space:]]*zone[[:space:]]+\"${ZONE_NAME}\"/,/\};/d" "${CONFIG}"
         echo "Removed zone stanza for ${ZONE_NAME} from ${CONFIG}"
     else
         echo "No existing zone stanza for ${ZONE_NAME} in ${CONFIG}"
