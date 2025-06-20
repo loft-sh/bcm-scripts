@@ -102,10 +102,10 @@ EOF
         fi
 
         echo "Created zone file ${ZONE_FILE_PATH} → ${IP}"
-
-        # reload specific zone
-        ${RNDC} reload ${ZONE_NAME}
-        echo "Reloaded zone ${ZONE_NAME}."
+        
+        # reload BIND
+        ${RNDC} reload
+        echo "BIND reloaded."
         ;;
 
     remove)
