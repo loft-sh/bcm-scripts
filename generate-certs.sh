@@ -83,9 +83,9 @@ openssl x509 -req \
 cat server.crt ca.pem > fullchain.pem
 
 # 5) Base64-encode for Kubernetes secrets (no newlines)
-CRT_B64=$(cat fullchain.pem | base64)
-KEY_B64=$(cat server.key | base64)
-CA_B64=$(cat ca.pem | base64)
+CRT_B64=$(cat fullchain.pem | base64 -w0)
+KEY_B64=$(cat server.key | base64 -w0)
+CA_B64=$(cat ca.pem | base64 -w0)
 
 # 6) Emit the two Secret manifests
 cat <<EOF
