@@ -78,8 +78,6 @@ case "$CMD" in
     CERT_DIR="_certs"
     mkdir -p "${CERT_DIR}" && cd "${CERT_DIR}"
 
-    echo "Generating TLS cert for ${DOMAIN} with SANs…"
-
     # 1) Generate server key
     openssl genrsa -out server.key 2048
 
