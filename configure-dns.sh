@@ -86,7 +86,7 @@ EOF
         cat > "${ZONE_FILE_PATH}" <<EOF
 \$TTL    86400
 @       IN      SOA     localhost. root.localhost. (
-                            $(date +%y%m%d%H%M) ; serial (YYYYMMDDhhmm)
+                            $(date +%y%m%d%H%M) ; serial (YYMMDDhhmm)
                             3600             ; refresh
                             1800             ; retry
                             604800           ; expire
