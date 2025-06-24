@@ -160,6 +160,15 @@ metadata:
 type: Opaque
 data:
   runai-ca.pem: ${CA_B64}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: runai-reg-creds
+  namespace: ${NAMESPACE}
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyJodHRwczovL2Zha2Utc2VydmVyLmNvbSI6eyJ1c2VybmFtZSI6ImZha2UtdXNlciIsInBhc3N3b3JkIjoiZmFrZS1wYXNzd29yZCIsImVtYWlsIjoic3VwcG9ydEBydW4uYWkiLCJhdXRoIjoiWm1GclpTMTFjMlZ5T21aaGEyVXRjR0Z6YzNkdmNtUT0ifX19
+type: kubernetes.io/dockerconfigjson
 EOF
 
     # cleanup
