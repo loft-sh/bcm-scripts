@@ -98,9 +98,6 @@ get_auth_token() {
             --data-urlencode 'scope=openid' \
             --data-urlencode 'response_type=id_token')
 
-        # Debug output
-        echo "Raw response: $raw_response" >> "$LOG_FILE"
-
         # Try to parse the token, with error handling
         if [ -n "$raw_response" ]; then
             # Check if the response is valid JSON
