@@ -150,7 +150,7 @@ while true; do
         -H "Authorization: Bearer $token" \
         -H 'Content-Type: application/json')
 
-    if grep "helm" "$installationStr"; then
+    if echo "$installationStr" | grep "helm" > /dev/null; then
         echo -n "$installationStr" | jq -c ".clientSecret | fromjson" > runai-cluster-client-secret.txt
         echo -n "$uuid" > runai-cluster-uuid.txt
         break
