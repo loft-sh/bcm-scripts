@@ -151,8 +151,8 @@ while true; do
         -H 'Content-Type: application/json')
 
     if grep "helm" "$installationStr"; then
-        echo "$installationStr" | jq -c ".clientSecret | fromjson" > runai-cluster-client-secret.txt
-        echo "$uuid" > runai-cluster-uuid.txt
+        echo -n "$installationStr" | jq -c ".clientSecret | fromjson" > runai-cluster-client-secret.txt
+        echo -n "$uuid" > runai-cluster-uuid.txt
         break
     fi
     
