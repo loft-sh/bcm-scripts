@@ -34,18 +34,16 @@ log_command() {
     local cmd="$1"
     local description="$2"
 
-    echo -e "\n\n==== $description ====" >> "$LOG_FILE"
-    echo "Command: $cmd" >> "$LOG_FILE"
-    echo "Executing at: $(date)" >> "$LOG_FILE"
-    echo "Output:" >> "$LOG_FILE"
+    echo -e "\n\n==== $description ===="
+    echo "Command: $cmd"
 
     # Execute command and capture both stdout and stderr
-    if eval "$cmd" >> "$LOG_FILE" 2>&1; then
-        echo "Status: SUCCESS" >> "$LOG_FILE"
+    if eval "$cmd"; then
+        echo "Status: SUCCESS"
         return 0
     else
         local exit_code=$?
-        echo "Status: FAILED (exit code: $exit_code)" >> "$LOG_FILE"
+        echo "Status: FAILED (exit code: $exit_code)"
         return $exit_code
     fi
 }
