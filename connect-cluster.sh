@@ -13,12 +13,6 @@ BLUE='\033[0;34m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-# must be run as root
-if [[ $EUID -ne 0 ]]; then
-    echo "ERROR: this script must be run as root." >&2
-    exit 1
-fi
-
 if [[ $# -lt 3 ]]; then
     echo "ERROR: expected 3 args" >&2
     exit 1
